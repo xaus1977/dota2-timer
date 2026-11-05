@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dota 2 Minimal Timer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=JetBrains+Mono:wght@600;700;800&family=Prompt:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        dota: {
+                            bg: '#12151a',
+                            card: '#181c23',
+                            border: '#262c36',
+                            gold: '#d4af37',
+                            crimson: '#c23c2a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #090b0e;
+            background-image: radial-gradient(circle at 50% 45%, rgba(212, 175, 55, 0.07) 0%, rgba(194, 60, 42, 0.04) 40%, transparent 75%);
+            color: #f1f5f9;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        @keyframes pulseAlert {
+            0%, 100% { background-color: rgba(194, 60, 42, 0.32); border-color: #d4af37; box-shadow: 0 0 10px rgba(212, 175, 55, 0.25); }
+            50% { background-color: rgba(212, 175, 55, 0.22); border-color: #ef4444; }
+        }
+        .alert-row {
+            animation: pulseAlert 1s infinite ease-in-out;
+        }
+        .clock-glow {
+            text-shadow: 0 0 24px rgba(212, 175, 55, 0.22);
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2e3644; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-2 sm:p-3 font-sans">
+
+    <!-- Ultra-Compact Single-Screen HUD Widget -->
+    <main class="w-full max-w-[420px] bg-dota-bg/95 backdrop-blur border border-dota-border rounded-2xl shadow-2xl overflow-hidden flex flex-col gap-2 p-2.5">
+
+        <!-- TOP BAR -->
+        <header class="flex items-center justify-between border-b border-dota-border/80 pb-1.5 px-0.5">
+            <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-dota-crimson ring-2 ring-dota-gold/50"></span>
+                <h1 class="text-[11px] font-bold tracking-wider uppercase text-dota-gold">DOTA 2 HUD TIMER <span class="text-slate-400 font-normal">(-10s)</span></h1>
+            </div>
+            <div class="flex items-center gap-1">
+                <span class="px-2 py-0.5 rounded bg-dota-card border border-dota-gold/30 text-[10px] font-bold text-amber-300">
+                    🎙️ Epic Kore Announcer
+                </span>
+                <button id="testVoiceBtn" onclick="unlockAndTestAudio(true)" class="px-2 py-0.5 rounded bg-dota-card hover:bg-slate-800 border border-dota-gold/40 text-[10px] font-medium text-amber-200 flex items-center gap-1 active:scale-95 transition">
+                    <span id="audioDot" class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span id="audioLabel">🔊 Test</span>
+                </button>
+                <button id="muteBtn" onclick="toggleMute()" class="px-1.5 py-0.5 rounded bg-dota-card hover:bg-slate-800 border border-dota-border text-xs active:scale-95 transition" title="เปิด/ปิดเสียง">
+                    <span id="muteIcon">🔊</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- TOP SECTION: UPCOMING EVENTS -->
+        <section class="bg-dota-card/90 border border-dota-border rounded-xl p-2">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    กำลังจะเกิดต่อไป (UPCOMING)
+                </span>
+                <span class="text-[10px] font-mono text-slate-400">แจ้งเตือนก่อน 10s</span>
+            </div>
+            <div id="upcomingList" class="space-y-1">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- CENTER HERO SECTION: MATCH GAME CLOCK -->
+        <section class="bg-gradient-to-b from-[#1c212b] to-[#141820] border-2 border-dota-gold/40 rounded-2xl p-3 text-center relative shadow-inner">
+
+            <!-- Live Voice Alert Banner -->
+            <div id="voiceBanner" class="hidden mb-2 px-2.5 py-1 rounded-lg bg-dota-crimson/95 border border-dota-gold text-[11px] font-mono text-white truncate shadow-lg">
+                🔊 <span id="voiceBannerText">Water rune will start in 10 seconds</span>
+            </div>
+
+            <!-- Phase Status & Quick Sync -->
+            <div class="flex items-center justify-between text-[10px] font-mono mb-1">
+                <span id="phaseBadge" class="px-2 py-0.5 rounded bg-slate-900/90 border border-slate-700/70 text-slate-300 font-semibold">
+                    📯 PRE-HORN
+                </span>
+                <div class="flex items-center gap-1">
+                    <button onclick="setClock(-60)" class="px-1.5 py-0.5 rounded bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition">-01:00</button>
+                    <button onclick="setClock(-30)" class="px-1.5 py-0.5 rounded bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition">-00:30</button>
+                    <button onclick="setClock(0)" class="px-2 py-0.5 rounded bg-dota-gold/20 hover:bg-dota-gold/30 text-amber-300 border border-dota-gold/50 font-bold active:scale-95 transition">📯 00:00</button>
+                </div>
+            </div>
+
+            <!-- Interactive Clock Display -->
+            <div id="clockViewMode" class="my-1">
+                <div class="inline-flex items-center justify-center gap-2 group cursor-pointer px-3 py-1 rounded-xl hover:bg-white/5 transition" onclick="openTimeEditor()">
+                    <div id="clockDisplay" class="font-mono font-extrabold text-5xl sm:text-6xl tracking-tight text-white clock-glow leading-none">
+                        -00:30
+                    </div>
+                    <span class="text-xs text-dota-gold/80 group-hover:text-dota-gold bg-slate-900/80 border border-dota-gold/30 rounded-md px-1.5 py-1 font-sans">
+                        ✎ ตั้งเวลา
+                    </span>
+                </div>
+                <div class="text-[10px] text-slate-400 -mt-0.5">แตะที่ตัวเลขเพื่อพิมพ์เวลาเกม หรือกดปรับด่วนด้านล่าง</div>
+            </div>
+
+            <!-- Inline Direct Time Input Mode -->
+            <form id="clockEditMode" onsubmit="applyCustomTime(event)" class="hidden my-2 bg-slate-950/90 border border-dota-gold rounded-xl p-2">
+                <div class="text-[10px] text-amber-300 font-medium mb-1">พิมพ์เวลาในเกม (เช่น <span class="font-mono">-00:45</span>, <span class="font-mono">12:30</span>)</div>
+                <div class="flex items-center justify-center gap-1.5">
+                    <button type="button" onclick="toggleEditSign()" id="signToggleBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 font-mono text-xs font-bold text-amber-300 hover:bg-slate-700">±</button>
+                    <input id="customTimeInput" type="text" placeholder="00:00" maxlength="6"
+                        class="w-28 text-center font-mono text-2xl font-bold bg-slate-900 text-white border border-dota-gold/60 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-dota-gold" />
+                    <button type="submit" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">ตกลง</button>
+                    <button type="button" onclick="closeTimeEditor()" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">✕</button>
+                </div>
+            </form>
+
+            <!-- Adjust Buttons -->
+            <div class="grid grid-cols-4 gap-1.5 mt-2">
+                <button onclick="adjustTime(-10)" class="py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-mono font-bold text-rose-300 active:scale-95 transition">-10s</button>
+                <button onclick="adjustTime(-1)" class="py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-mono font-bold text-rose-200 active:scale-95 transition">-1s</button>
+                <button onclick="adjustTime(1)" class="py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-mono font-bold text-emerald-200 active:scale-95 transition">+1s</button>
+                <button onclick="adjustTime(10)" class="py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-mono font-bold text-emerald-300 active:scale-95 transition">+10s</button>
+            </div>
+
+            <!-- START / PAUSE & Reset -->
+            <div class="grid grid-cols-5 gap-1.5 mt-2">
+                <button id="startBtn" onclick="toggleTimer()" class="col-span-4 py-2 rounded-xl bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 border border-emerald-400/60 text-sm font-bold tracking-wide text-white shadow-lg active:scale-98 transition">
+                    ▶ เริ่มจับเวลา (START)
+                </button>
+                <button onclick="resetTimer()" class="col-span-1 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-xs font-bold text-red-200 active:scale-95 transition" title="รีเซ็ตกลับเป็น -00:30">
+                    ↺
+                </button>
+            </div>
+        </section>
+
+        <!-- BOTTOM SECTION: PAST EVENT LOG -->
+        <section class="bg-dota-card/90 border border-dota-border rounded-xl p-2">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-dota-gold flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-dota-gold"></span>
+                    เกิดอะไรไปแล้วบ้าง (EVENT LOG)
+                </span>
+                <button onclick="clearLog()" class="text-[10px] text-slate-400 hover:text-white">ล้างประวัติ</button>
+            </div>
+            <div id="historyList" class="space-y-1 max-h-[82px] overflow-y-auto pr-0.5 font-mono text-[11px]">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- 6-Event Toggle Bar -->
+        <section>
+            <div id="pillsContainer" class="grid grid-cols-3 gap-1">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // 1. Event Categories & Schedule Config
+        const CATEGORIES = {
+            water:  { id: 'water',  label: 'Water',  icon: '💧', sub: '2m,4m', enabled: true },
+            bounty: { id: 'bounty', label: 'Bounty', icon: '🪙', sub: '3m',    enabled: true },
+            power:  { id: 'power',  label: 'Power',  icon: '⚡', sub: '6m+2m', enabled: true },
+            lotus:  { id: 'lotus',  label: 'Lotus',  icon: '🪷', sub: '3m',    enabled: true },
+            creeps: { id: 'creeps', label: 'Creeps', icon: '🐺', sub: '1m',    enabled: true },
+            items:  { id: 'items',  label: 'Items',  icon: '🗡️', sub: 'T1-T5', enabled: true }
+        };
+
+        function buildSchedule() {
+            const list = [];
+            const max = 90 * 60;
+
+            [120, 240].forEach(s => list.push({
+                cat: 'water', name: 'Water Rune', shortName: 'Water rune', time: s
+            }));
+
+            for (let s = 0; s <= max; s += 180) {
+                list.push({
+                    cat: 'bounty', name: 'Bounty Rune', shortName: 'Bounty rune', time: s
+                });
+            }
+
+            for (let s = 360; s <= max; s += 120) {
+                list.push({
+                    cat: 'power', name: 'Power Rune', shortName: 'Power rune', time: s
+                });
+            }
+
+            for (let s = 180; s <= max; s += 180) {
+                list.push({
+                    cat: 'lotus', name: 'Lotus Pool', shortName: 'Lotus pool', time: s
+                });
+            }
+
+            for (let s = 60; s <= max; s += 60) {
+                list.push({
+                    cat: 'creeps', name: 'Neutral Creeps', shortName: 'Neutral creeps', time: s
+                });
+            }
+
+            [{t:1,m:7},{t:2,m:17},{t:3,m:27},{t:4,m:37},{t:5,m:60}].forEach(({t,m}) => {
+                list.push({
+                    cat: 'items', name: `Tier ${t} Items`, shortName: `Tier ${t} items`, time: m * 60
+                });
+            });
+
+            return list.sort((a, b) => a.time - b.time);
+        }
+
+        const EVENTS = buildSchedule();
+
+        // 2. Timer & Audio State
+        let currentSec = -30;
+        let isRunning = false;
+        let timerId = null;
+        let lastTick = 0;
+        let accMs = 0;
+
+        let isMuted = false;
+        let audioCtx = null;
+        const fired10s = new Set();
+        const firedSpawn = new Set();
+        let historyLogs = [];
+
+        const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(navigator.userAgent) || 
+                              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        // 3. Cinematic Dota Announcer Web Audio Engine
+        function initAudio() {
+            if (!audioCtx) {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (Ctx) audioCtx = new Ctx();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playEpicChime() {
+            if (isMuted) return;
+            try {
+                initAudio();
+                if (!audioCtx) return;
+                const now = audioCtx.currentTime;
+
+                // Sub-bass War Drum Impact
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(140, now);
+                osc.frequency.exponentialRampToValueAtTime(38, now + 0.35);
+
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.45);
+            } catch (e) {}
+        }
+
+        function speakAnnouncer(text) {
+            if (isMuted || !('speechSynthesis' in window)) return;
+            try {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'en-US';
+
+                // ปรับจังหวะความเร็ว: ให้พอดีกับคำว่า Epic
+                u.rate = isAppleDevice ? 0.95 : 1.05;
+                // ปรับความทุ้มให้เสียงหนา เข้ม เหมือนผู้ประกาศศึก
+                u.pitch = isAppleDevice ? 0.75 : 0.8;
+
+                const voices = window.speechSynthesis.getVoices();
+                
+                // คัดสรรเสียงที่ดีที่สุดของแต่ละระบบ
+                let selectedVoice = null;
+                if (isAppleDevice) {
+                    // บน iPhone/iPad/Mac เลือกเสียง Daniel หรือ Fred หรือ Siri ชาย
+                    selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Daniel') || v.name.includes('Oliver') || v.name.includes('Aaron'))) ||
+                                    voices.find(v => v.name.includes('Fred')) ||
+                                    voices.find(v => v.lang === 'en-US');
+                } else {
+                    // บน PC เลือก Natural / David / Google US English
+                    selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Guy') || v.name.includes('David') || v.name.includes('Google US English'))) ||
+                                    voices.find(v => v.lang.startsWith('en-US'));
+                }
+
+                if (selectedVoice) u.voice = selectedVoice;
+                window.speechSynthesis.speak(u);
+            } catch (e) {
+                console.error("Announcer speech error:", e);
+            }
+        }
+
+        function speak(text) {
+            if (isMuted) return;
+
+            playEpicChime();
+
+            const banner = document.getElementById('voiceBanner');
+            const bannerText = document.getElementById('voiceBannerText');
+            bannerText.textContent = text;
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('hidden'), 3500);
+
+            speakAnnouncer(text);
+        }
+
+        function unlockAndTestAudio(playSample = true) {
+            initAudio();
+            if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
+            if ('wakeLock' in navigator) {
+                navigator.wakeLock.request('screen').catch(() => {});
+            }
+            const dot = document.getElementById('audioDot');
+            const label = document.getElementById('audioLabel');
+            dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+            label.textContent = 'Active';
+
+            if (playSample) {
+                speak('Neutral creeps in 10 seconds');
+            }
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            document.getElementById('muteIcon').textContent = isMuted ? '🔇' : '🔊';
+            if (isMuted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+        }
+
+        function fmt(sec) {
+            const neg = sec < 0;
+            const abs = Math.abs(sec);
+            const m = Math.floor(abs / 60);
+            const s = abs % 60;
+            return `${neg ? '-' : ''}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        // 4. Timer & Controls
+        function updateStartButtonUI() {
+            const btn = document.getElementById('startBtn');
+            if (isRunning) {
+                btn.textContent = '⏸ หยุดชั่วคราว (PAUSE)';
+                btn.className = 'col-span-4 py-2 rounded-xl bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 border border-amber-400/60 text-sm font-bold tracking-wide text-white shadow-lg active:scale-98 transition';
+            } else {
+                btn.textContent = currentSec === -30 ? '▶ เริ่มจับเวลา (START)' : '▶ เดินเวลาต่อ (RESUME)';
+                btn.className = 'col-span-4 py-2 rounded-xl bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 border border-emerald-400/60 text-sm font-bold tracking-wide text-white shadow-lg active:scale-98 transition';
+            }
+        }
+
+        function toggleTimer() {
+            unlockAndTestAudio(false);
+            if (isRunning) {
+                isRunning = false;
+                clearInterval(timerId);
+                updateStartButtonUI();
+            } else {
+                isRunning = true;
+                lastTick = performance.now();
+                updateStartButtonUI();
+                checkEvents(currentSec);
+                timerId = setInterval(() => {
+                    const now = performance.now();
+                    accMs += (now - lastTick);
+                    lastTick = now;
+                    while (accMs >= 1000) {
+                        accMs -= 1000;
+                        currentSec++;
+                        checkEvents(currentSec);
+                        render();
+                    }
+                }, 200);
+            }
+        }
+
+        function setClock(sec) {
+            currentSec = sec;
+            accMs = 0;
+            fired10s.clear();
+            firedSpawn.clear();
+            render();
+        }
+
+        function adjustTime(delta) {
+            setClock(currentSec + delta);
+        }
+
+        function resetTimer() {
+            if (isRunning) toggleTimer();
+            setClock(-30);
+            updateStartButtonUI();
+        }
+
+        function openTimeEditor() {
+            document.getElementById('clockViewMode').classList.add('hidden');
+            document.getElementById('clockEditMode').classList.remove('hidden');
+            const input = document.getElementById('customTimeInput');
+            input.value = fmt(currentSec);
+            input.focus();
+            input.select();
+        }
+
+        function closeTimeEditor() {
+            document.getElementById('clockEditMode').classList.add('hidden');
+            document.getElementById('clockViewMode').classList.remove('hidden');
+        }
+
+        function toggleEditSign() {
+            const input = document.getElementById('customTimeInput');
+            const val = input.value.trim();
+            if (val.startsWith('-')) {
+                input.value = val.substring(1);
+            } else {
+                input.value = '-' + val;
+            }
+            input.focus();
+        }
+
+        function parseTimeInput(raw) {
+            const str = raw.trim();
+            if (!str) return null;
+            const isNeg = str.startsWith('-');
+            const clean = str.replace(/^[+-]/, '');
+            let totalSec = 0;
+
+            if (clean.includes(':')) {
+                const parts = clean.split(':');
+                const m = parseInt(parts[0] || '0', 10);
+                const s = parseInt(parts[1] || '0', 10);
+                if (isNaN(m) || isNaN(s) || s < 0 || s >= 60) return null;
+                totalSec = m * 60 + s;
+            } else {
+                const num = parseInt(clean, 10);
+                if (isNaN(num)) return null;
+                totalSec = num;
+            }
+            return isNeg ? -totalSec : totalSec;
+        }
+
+        function applyCustomTime(e) {
+            e.preventDefault();
+            const input = document.getElementById('customTimeInput');
+            const parsed = parseTimeInput(input.value);
+            if (parsed !== null) {
+                setClock(parsed);
+                addLog(parsed, `⏱️ ตั้งเวลาเป็น ${fmt(parsed)}`, false);
+            }
+            closeTimeEditor();
+        }
+
+        // 5. Combined Phrases
+        const CAT_PRIORITY = ['bounty', 'water', 'power', 'lotus', 'creeps', 'items'];
+
+        function formatCombinedPhrase(events) {
+            if (events.length === 0) return '';
+            const sortedEvents = [...events].sort((a, b) => {
+                return CAT_PRIORITY.indexOf(a.cat) - CAT_PRIORITY.indexOf(b.cat);
+            });
+
+            if (sortedEvents.length === 1) {
+                return `${sortedEvents[0].shortName} in 10 seconds`;
+            }
+            const names = sortedEvents.map(e => e.shortName);
+            if (names.length === 2) {
+                return `${names[0]} and ${names[1]} in 10 seconds`;
+            }
+            const last = names.pop();
+            return `${names.join(', ')} and ${last} in 10 seconds`;
+        }
+
+        function checkEvents(sec) {
+            const targetSpawnTimeForWarn = sec + 14;
+            const dueWarnEvents = EVENTS.filter(e => CATEGORIES[e.cat].enabled && e.time === targetSpawnTimeForWarn);
+            const eventsToSpeak = [];
+
+            dueWarnEvents.forEach(e => {
+                const key = `${e.cat}_${e.time}`;
+                if (!fired10s.has(key)) {
+                    fired10s.add(key);
+                    eventsToSpeak.push(e);
+                    addLog(sec, `🔊 เตือน: ${CATEGORIES[e.cat].icon} ${e.name} (ใน 10s)`, true);
+                }
+            });
+
+            if (eventsToSpeak.length > 0) {
+                const combinedPhrase = formatCombinedPhrase(eventsToSpeak);
+                speak(combinedPhrase);
+            }
+
+            EVENTS.filter(e => CATEGORIES[e.cat].enabled && e.time === sec).forEach(e => {
+                const key = `${e.cat}_${e.time}`;
+                if (!firedSpawn.has(key)) {
+                    firedSpawn.add(key);
+                    addLog(sec, `✅ เกิดแล้ว: ${CATEGORIES[e.cat].icon} ${e.name} (${fmt(e.time)})`, false);
+                }
+            });
+        }
+
+        function addLog(sec, msg, isWarn) {
+            historyLogs.unshift({ time: fmt(sec), msg, isWarn });
+            if (historyLogs.length > 30) historyLogs.pop();
+            renderLog();
+        }
+
+        function clearLog() {
+            historyLogs = [];
+            renderLog();
+        }
+
+        // 6. Render Functions
+        function renderPills() {
+            const el = document.getElementById('pillsContainer');
+            el.innerHTML = Object.values(CATEGORIES).map(c => `
+                <button onclick="toggleCat('${c.id}')" class="px-2 py-1.5 rounded-lg border text-left flex items-center justify-between transition active:scale-95 ${
+                    c.enabled
+                        ? 'bg-dota-card border-dota-gold/50 text-white'
+                        : 'bg-slate-900/40 border-slate-800 text-slate-500 opacity-60'
+                }">
+                    <span class="text-xs font-semibold truncate">${c.icon} ${c.label}</span>
+                    <span class="text-[9px] font-mono text-slate-400">${c.sub}</span>
+                </button>
+            `).join('');
+        }
+
+        function toggleCat(id) {
+            CATEGORIES[id].enabled = !CATEGORIES[id].enabled;
+            renderPills();
+            render();
+        }
+
+        function renderLog() {
+            const el = document.getElementById('historyList');
+            if (historyLogs.length === 0) {
+                el.innerHTML = `<div class="text-slate-500 text-center py-3">ยังไม่มีประวัติ Event</div>`;
+                return;
+            }
+            el.innerHTML = historyLogs.map(l => `
+                <div class="flex items-center justify-between px-2 py-1 rounded ${l.isWarn ? 'bg-amber-950/30 text-amber-200' : 'bg-slate-900/60 text-slate-300'}">
+                    <span class="truncate">${l.msg}</span>
+                    <span class="text-[10px] text-slate-400 ml-2 shrink-0">[${l.time}]</span>
+                </div>
+            `).join('');
+        }
+
+        function render() {
+            document.getElementById('clockDisplay').textContent = fmt(currentSec);
+
+            const badge = document.getElementById('phaseBadge');
+            if (currentSec < 0) {
+                badge.textContent = '📯 PRE-HORN';
+            } else {
+                const isDay = Math.floor(currentSec / 300) % 2 === 0;
+                badge.textContent = isDay ? '☀️ DAYTIME' : '🌙 NIGHTTIME';
+            }
+
+            const upcoming = EVENTS.filter(e => CATEGORIES[e.cat].enabled && e.time > currentSec).slice(0, 3);
+            const upEl = document.getElementById('upcomingList');
+
+            if (upcoming.length === 0) {
+                upEl.innerHTML = `<div class="text-xs text-slate-500 text-center py-1.5">ไม่มี Event ที่เลือกไว้</div>`;
+                return;
+            }
+
+            upEl.innerHTML = upcoming.map(e => {
+                const left = e.time - currentSec;
+                const isImminent = left <= 14;
+                const c = CATEGORIES[e.cat];
+                return `
+                    <div class="flex items-center justify-between px-2.5 py-1 rounded-lg border ${
+                        isImminent ? 'alert-row' : 'bg-slate-900/70 border-slate-800/90'
+                    }">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-xs">${c.icon}</span>
+                            <span class="text-xs font-semibold text-white truncate">${e.name}</span>
+                            <span class="text-[10px] font-mono text-dota-gold">@${fmt(e.time)}</span>
+                        </div>
+                        <div class="font-mono text-xs font-bold ${isImminent ? 'text-amber-300' : 'text-emerald-400'} shrink-0">
+                            ${isImminent ? `🔊 อีก ${left}s` : `in ${fmt(left)}`}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.onload = () => {
+            renderPills();
+            renderLog();
+            render();
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.onvoiceschanged = () => {
+                    window.speechSynthesis.getVoices();
+                };
+            }
+        };
+    </script>
+</body>
+</html>
